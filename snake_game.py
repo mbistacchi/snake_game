@@ -3,18 +3,11 @@ import sys
 import random
 import queue
 
-# TODO: queue for keypress, scene stuff
+# TODO: Walls, queue for keypress, scene stuff, 2 player, difficulty(?)
 
 """ ######################
          PREAMBLE
     ###################### """
-
-""" Constants """
-SQUARE_SIZE = 20 # pixels
-SQUARES_PER_ARENA_SIDE = 20 # squares
-MARGIN = 2 # pixels
-SNAKE_START_SIZE = 3
-SNAKE_START = (int(SQUARES_PER_ARENA_SIDE/2), int(SQUARES_PER_ARENA_SIDE/2))
 
 """ Dictionaries for direction/velocity mapping - stolen from https://github.com/Mekire """
 DIRECT_DICT = {"left" : (-1, 0), "right" : (1, 0),
@@ -29,10 +22,11 @@ OPPOSITES = {"left" : "right", "right" : "left",
 """ Colour Mapping """
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
+DARK_GREY = (70, 70, 70)
 GREY = (211, 211, 211)
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
-COLOUR_MAP = {"snake": GREEN, "apple": RED, "wall": BLACK, "surface": GREY }
+COLOUR_MAP = {"snake": GREEN, "apple": RED, "wall": BLACK, "surface": GREY, "background": DARK_GREY }
 
 """ ################
         CLASSES
@@ -57,7 +51,7 @@ class Square:
         py = (y+1)*(2*MARGIN + SQUARE_SIZE) - MARGIN
         return (px, py)
 
-    def index_coords(self):
+    def index_coords(self): # TODO - remove for direct ref?
         return (self.xi, self.yi)
 
 class Arena:
@@ -66,7 +60,6 @@ class Arena:
         self.size = size # i.e. number of squares = size**2 for square arena
         self.length = square_length # i.e. per square dimension
         self.colour = colour
-
         self.squares = [ [] for i in range(self.size) ]
         for y in range(self.size):
             for x in range(self.size):
@@ -82,16 +75,16 @@ class Snake:
     def __init__(self, pos, colour, square_length):
         self.xi, self.yi = pos
         self.colour = colour
-        self.size = SNAKE_START_SIZE
+        self.size = 3
         self.length = square_length
         self.direction = "right"
-        self.direction_queue = queue.Queue(4)
+        self.direction_queue = queue.Queue(4) # TODO
         self.points = 0
         self.growing = False
         self.alive = True
         self.squares = []
-        for xi in range(self.size): # horizontal initial orientation
-            self.squares.append(Square((SNAKE_START[0] - xi, SNAKE_START[1]), self.colour, self.length))
+        for x in range(self.size): # horizontal initial orientation
+            self.squares.append(Square((self.xi - x, self.yi), self.colour, self.length))
 
     def display(self):
         for square in self.squares:
@@ -114,13 +107,13 @@ class Snake:
                     self.alive = False
 
         _collide(body)
-        #_collide(walls) TODO
+        if walls is not None:
+            _collide(walls)
             
     def update(self):
          # Add new head based on velocity and old head
         velocity = DIRECT_DICT[self.direction]
         head_coords = [ (self.squares[0].index_coords()[i] + velocity[i]) for i in (0,1) ]
-        
         # Wrap around screen if reach the end
         for i in (0, 1):
             if head_coords[i] < 0:
@@ -150,12 +143,11 @@ class Player(Snake):
     def __init__(self, pos, colour, size):
         Snake.__init__(self, pos, colour, size)
     
-    def get_key(self):
-        for event in pg.event.get():
-            if event.type == pg.KEYDOWN and event.key in KEY_MAPPING:
-                    new_direction = KEY_MAPPING[event.key]
-                    if new_direction != OPPOSITES[self.direction]:
-                        self.direction = new_direction
+    def get_key(self, event):
+        if event.type == pg.KEYDOWN and event.key in KEY_MAPPING:
+                new_direction = KEY_MAPPING[event.key]
+                if new_direction != OPPOSITES[self.direction]:
+                    self.direction = new_direction
 
 class Apple:
     """ Food our (veggie) snake is greedily after """
@@ -178,61 +170,139 @@ class Apple:
             for sq in ob.squares:
                 while sq.index_coords() == (_x, _y):
                     _x, _y = self._rand_coords()
-        self.square.xi, self.square.yi = _x, _y # this line for ongoing updates
+        self.square.xi, self.square.yi = _x, _y
        
     def display(self):
         self.square.display()
 
 
-""" Game/Scene management and control """
-class Director:
-    """Represents the main object of the game.
- 
-    The Director object keeps the game on, and takes care of updating it,
-    drawing it and propagate events.
- 
-    This object must be used with Scene objects that are defined later."""
- 
-    def __init__(self):
-        self.screen = pygame.display.set_mode((640, 480))
-        pygame.display.set_caption("Snake")
-        self.scene = None
-        self.quit = False
-        self.clock = pygame.time.Clock()
- 
-    def loop(self):
-        "Main game loop."
- 
-        while not self.quit:
-            time = self.clock.tick(60)
- 
-            # Exit events
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.quit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        self.quit()
- 
-            # Detect events
-            self.scene.on_event()
- 
-            # Update scene
-            self.scene.on_update()
- 
-            # Draw the screen
-            self.scene.on_draw(self.screen)
-            pygame.display.flip()
- 
-    def change_scene(self, scene):
-        "Changes the current scene."
-        self.scene = scene
- 
-    def quit(self):
-        self.quit_flag = True
-        
+""" ################ SCENES ####################### """    
 
-""" Temporary Standin Control Loop """
+class Scene:
+    """ Overload most of this - barebones structure
+    A bit pointless in current state but easily expanded """
+    def __init__(self):
+        self.done = False
+    
+    def when_activated(self):
+        pass
+
+    def reset(self):
+        self.done = False
+
+    def render(self):
+        pass
+
+    def process_event(self, event):
+        pass
+
+class StartUp(Scene):
+    def __init__(self):
+        Scene.__init__(self)
+
+    def render(self):
+        # test placeholder
+        pass
+
+    def when_activated(self):
+        print("Press any key to continue")
+    
+    def process_event(self, event):
+        if event.type == pg.KEYDOWN:
+            self.done = True
+
+class GamePlayState(Scene):
+    def __init__(self):
+        Scene.__init__(self)
+        self.arena = Arena(SQUARES_PER_ARENA_SIDE, SQUARE_SIZE, COLOUR_MAP["surface"])
+        self.snake = Player(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE)
+        self.apple = Apple(COLOUR_MAP["apple"], SQUARE_SIZE, 1, self.snake)
+        self.font = pg.font.SysFont("courier new", 50)
+
+    def render(self):
+        screen.fill(COLOUR_MAP["background"])
+        self.arena.display()
+        self.apple.display()
+        self.snake.display()
+        text = self.font.render(str(self.snake.points), True, [255,255,255])
+        screen.blit(text, (500, 400))
+
+    def process_event(self, event):
+        self.snake.get_key(event)
+        self.snake.update()
+        self.snake.food_check(self.apple)
+        self.snake.collision_check()
+        if self.snake.alive == False:
+            print("GAME OVER")
+            print(self.snake.points)
+            self.done = True
+                
+
+""" ################## CONTROL CLASS  #########################"""
+
+class Control:
+    def __init__(self):
+        self.clock = pg.time.Clock()
+        self.fps = FPS
+        self.done = False
+        self.scene_array = [StartUp(), GamePlayState()]
+        self.scene_index = 0 # dirty way whilst dict method needs tinkering
+        #self.scene_dict = {"START": StartUp(), "GAME": GamePlayState()}
+        self.scene = self.scene_array[self.scene_index]
+        #self.scene = self.scene_dict["START"]
+        self.scene.when_activated()
+
+    def event_handler(self):
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                self.done = True
+            elif event.type == pg.KEYDOWN:
+                self.scene.process_event(event)
+
+    def scene_checker(self):
+        if self.scene.done:
+            self.scene.reset() # for reuse  - TODO
+            self.scene_index = (self.scene_index + 1) % len(self.scene_array)
+            self.scene = self.scene_array[self.scene_index]
+            self.scene.when_activated()
+            #self.scene = self.scene_dict[self.scene.next]
+
+    def draw(self):
+        self.scene.render()
+
+    def main_loop(self):
+        self.event_handler()
+        self.scene_checker()
+        self.draw()
+
+
+""" ################ RUN GAME ################ """
+
+""" Game paramaters """
+SQUARE_SIZE = 20 # pixels
+SQUARES_PER_ARENA_SIDE = 20 # squares
+MARGIN = 2 # pixels
+SNAKE_START = (int(SQUARES_PER_ARENA_SIDE/2), int(SQUARES_PER_ARENA_SIDE/2)) # square coords
+
+pg.init()
+#clock = pg.time.Clock()
+# Square.display() and a few others
+#  need a direct reference to "screen"
+#  - TODO impliment better
+w, h = 680, 680
+SCREEN_SIZE = [w, h]
+FPS = 10
+screen = pg.display.set_mode(SCREEN_SIZE)
+
+Game = Control()
+while not Game.done:
+    Game.main_loop()
+    pg.display.update()
+    #clock.tick(FPS)
+pg.quit()
+
+"""
+# Testing
 pg.init()
 clock = pg.time.Clock()
 FPS = 10
@@ -240,7 +310,6 @@ w, h = 780, 780
 screen_size = [w, h]
 screen = pg.display.set_mode(screen_size)
 
-# Testing
 arena = Arena(SQUARES_PER_ARENA_SIDE, SQUARE_SIZE, COLOUR_MAP["surface"])
 snake = Player(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE)
 apple = Apple(COLOUR_MAP["apple"], SQUARE_SIZE, 1, snake)
@@ -250,14 +319,14 @@ font = pg.font.SysFont("courier new", 50)
 
 while not done:
     for event in pg.event.get():  # User did something
-        if event.type == pg.QUIT:  # If user clicked close
+        if event.type == pg.QUIT: 
             done = True
 
     pg.draw.rect(screen, BLACK, (0,0,w,h))
     arena.display()
     apple.display()
 
-    snake.get_key()
+    snake.get_key(event)
     snake.update()
     snake.food_check(apple)
     snake.collision_check()
@@ -270,3 +339,4 @@ while not done:
     screen.blit(text, (500, 400))
     pg.display.update()
     clock.tick(FPS)
+"""
