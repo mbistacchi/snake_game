@@ -3,7 +3,7 @@ import sys
 import random
 import queue
 
-# TODO:  Proper Scene transition/reset, AI Snake, 2 player, difficulty
+# TODO: Nice Start/Death Screen AI Snake, 2 player, difficulty
 
 """ #######################################
          HARD CODED MAPPINGS
@@ -51,8 +51,9 @@ class Square:
         py = (y+1)*(2*MARGIN + SQUARE_SIZE) - MARGIN
         return (px, py)
 
-    def index_coords(self): # TODO - remove for direct ref?
+    def index_coords(self):
         return (self.xi, self.yi)
+
 
 class Arena:
     """ A grid within which the game takes place """
@@ -69,6 +70,7 @@ class Arena:
         for y in self.squares:
             for square in y:
                 square.display()
+
 
 class Wall:
     """ Obstacles for the snake to navigate around """
@@ -87,6 +89,7 @@ class Wall:
     def display(self):
         for sq in self.squares:
             sq.display()
+
 
 class Snake:
     """ Class for the agent(s) """
@@ -146,6 +149,7 @@ class Snake:
         else:
             del self.squares[-1]
 
+
 class Player(Snake):
     """ Human controlled snake via arrow keys """
     def __init__(self, pos, colour, size):
@@ -168,6 +172,7 @@ class Player(Snake):
                 self.direction_queue.put(KEY_MAPPING[key], block=False)
             except queue.Full:
                 pass
+
 
 class Apple:
     """ Food our (veggie) snake is greedily after """
@@ -205,9 +210,6 @@ class Scene:
         self.done = False
         self.next_state = next_state
 
-    def when_activated(self):
-        pass
-
     def reset(self):
         self.done = False
 
@@ -220,23 +222,28 @@ class Scene:
     def update(self):
         pass
 
+
 class StartUp(Scene):
     def __init__(self, next_state):
         Scene.__init__(self, next_state)
 
     def render(self):
-        pass # TODO render something nice
-
-    def when_activated(self):
-        print("Press any key to continue")
+        font = pg.font.SysFont("courier new", 20)
+        text = font.render("Press any Key to Continue", True, [255,255,255])
+        screen.blit(text, (200, 300))
 
     def process_event(self, event):
         if event.type == pg.KEYDOWN:
             self.done = True
 
+
 class GamePlayState(Scene):
     def __init__(self, next_state):
         Scene.__init__(self, next_state)
+        self.reset()
+
+    def reset(self):
+        Scene.reset(self)
         self.arena = Arena(SQUARES_PER_ARENA_SIDE, SQUARE_SIZE, COLOUR_MAP["surface"])
         self.snake = Player(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE)
         self.apple = Apple(COLOUR_MAP["apple"], SQUARE_SIZE, 1, self.snake)
@@ -262,11 +269,9 @@ class GamePlayState(Scene):
         self.snake.food_check(self.apple)
         self.snake.collision_check(self.wall)
         if self.snake.alive == False:
-            print("GAME OVER")
-            print(self.snake.points)
             self.done = True
 
-
+    
 """ ################## CONTROL CLASS  #########################"""
 
 class Control:
@@ -274,7 +279,6 @@ class Control:
         self.done = False
         self.scene_dict = {"START": StartUp("GAME"), "GAME": GamePlayState("START")}
         self.scene = self.scene_dict["START"]
-        self.scene.when_activated()
 
     def event_handler(self):
         for event in pg.event.get():
@@ -286,9 +290,8 @@ class Control:
     def update(self):
         self.scene.update()
         if self.scene.done:
-            self.scene.reset() # for reuse  - TODO
+            self.scene.reset()
             self.scene = self.scene_dict[self.scene.next_state]
-            self.scene.when_activated()
 
     def draw(self):
         self.scene.render()
