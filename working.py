@@ -269,7 +269,10 @@ class GamePlayState(Scene):
 class Control:
     def __init__(self):
         self.done = False
+        #self.scene_array = [StartUp("GAME"), GamePlayState("START")]
+        #self.scene_index = 0 # dirty way whilst dict method needs tinkering
         self.scene_dict = {"START": StartUp("GAME"), "GAME": GamePlayState("START")} #TODO
+        #self.scene = self.scene_array[self.scene_index]
         self.scene = self.scene_dict["START"]
         self.scene.when_activated()
 
@@ -284,6 +287,9 @@ class Control:
         self.scene.update()
         if self.scene.done:
             self.scene.reset() # for reuse  - TODO
+            #self.scene_index = (self.scene_index + 1) % len(self.scene_array)
+            #self.scene = self.scene_array[self.scene_index]
+            
             self.scene = self.scene_dict[self.scene.next_state]
             self.scene.when_activated()
 
