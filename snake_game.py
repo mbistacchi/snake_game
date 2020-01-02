@@ -3,7 +3,7 @@ import sys
 import random
 import queue
 
-# TODO: Walls, queue for keypress, scene stuff, 2 player, difficulty(?)
+# TODO:  Proper Scene transition/reset, AI Snake, 2 player, difficulty
 
 """ #######################################
          HARD CODED MAPPINGS
@@ -129,6 +129,7 @@ class Snake:
             _collide(wall)
             
     def update(self):
+        """ Takes in left/right etc, updates velocity (1, 0) vector """
          # Add new head based on velocity and old head
         velocity = DIRECT_DICT[self.direction]
         head_coords = [ (self.squares[0].index_coords()[i] + velocity[i]) for i in (0,1) ]
@@ -145,28 +146,28 @@ class Snake:
         else:
             del self.squares[-1]
 
-    """
-    def queue_key_press(self, key):
-        for keys in KEY_MAPPING:
-            if key in keys:
-                try:
-                    self.direction_queue.put(KEY_MAPPING[keys], block=False)
-                    break
-                except queue.Full:
-                    pass
-    """
-
 class Player(Snake):
     """ Human controlled snake via arrow keys """
     def __init__(self, pos, colour, size):
         Snake.__init__(self, pos, colour, size)
         self.direction_queue = queue.Queue(4) # TODO
     
-    def get_key(self, event):
-        if event.type == pg.KEYDOWN and event.key in KEY_MAPPING:
-                new_direction = KEY_MAPPING[event.key]
-                if new_direction != OPPOSITES[self.direction]:
-                    self.direction = new_direction
+    def process_queue(self):
+        """ Takes in left/right etc, updates direction """
+        try:
+            new_direction = self.direction_queue.get(block=False)
+        except queue.Empty:
+            new_direction = self.direction
+        if new_direction not in (self.direction, OPPOSITES[self.direction]):
+            self.direction = new_direction
+
+    def queue_key_press(self, key):
+        """ Adds multiple inputs into queue. Inputs decoded into left/right etc. """
+        if key in KEY_MAPPING:
+            try:
+                self.direction_queue.put(KEY_MAPPING[key], block=False)
+            except queue.Full:
+                pass
 
 class Apple:
     """ Food our (veggie) snake is greedily after """
@@ -252,9 +253,11 @@ class GamePlayState(Scene):
         screen.blit(text, (500, 400))
 
     def process_event(self, event):
-        self.snake.get_key(event)
+        if event.type == pg.KEYDOWN:
+            self.snake.queue_key_press(event.key)
 
     def update(self):
+        self.snake.process_queue()
         self.snake.update()
         self.snake.food_check(self.apple)
         self.snake.collision_check(self.wall)
