@@ -9,7 +9,7 @@ import queue
          HARD CODED MAPPINGS
     ####################################### """
 
-""" Dictionaries for direction/velocity mapping - stolen from https://github.com/Mekire """
+""" Dictionaries for direction/velocity mapping - stolen from https://github.com/Mekire (along with some other general ideas like direction queue) """
 DIRECT_DICT = {"left" : (-1, 0), "right" : (1, 0),
                "up" : (0,-1), "down" : (0, 1)}
 
@@ -150,7 +150,7 @@ class Player(Snake):
     """ Human controlled snake via arrow keys """
     def __init__(self, pos, colour, size):
         Snake.__init__(self, pos, colour, size)
-        self.direction_queue = queue.Queue(4) # TODO
+        self.direction_queue = queue.Queue(4)
     
     def process_queue(self):
         """ Takes in left/right etc, updates direction """
@@ -272,7 +272,7 @@ class GamePlayState(Scene):
 class Control:
     def __init__(self):
         self.done = False
-        self.scene_dict = {"START": StartUp("GAME"), "GAME": GamePlayState("START")} #TODO
+        self.scene_dict = {"START": StartUp("GAME"), "GAME": GamePlayState("START")}
         self.scene = self.scene_dict["START"]
         self.scene.when_activated()
 
