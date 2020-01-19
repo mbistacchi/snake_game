@@ -2,8 +2,9 @@ import pygame as pg
 import sys
 import random
 import queue
+from collections import deque
 
-# TODO: Nice Start/Death Screen AI Snake, 2 player, difficulty
+# TODO: AI Snake with pathfinding algorithms (BFS, A* etc); more options like perimeter wall, difficulty
 
 """ #######################################
          HARD CODED MAPPINGS
@@ -35,7 +36,11 @@ COLOUR_MAP = {"snake": GREEN, "apple": RED, "wall": BLACK, "surface": GREY, "bac
 """ ####################### Object Classes ########################## """
 
 class Square:
-    """ All other objects in the game will be built up from this """
+    """ All other objects in the game will be built up from this
+    All `display()` functions revert to this. The only back-end logic held is `index coords`,
+    for x, y in {0, 1, 2 ... SQUARES_PER_ARENA_SIDE - 1} instead of raw pixel location values.
+    N.B. As pg.rect takes in (x, y) not (y, x), we generally use this convention, although not when in breaks Python.
+    """
     def __init__(self, pos, colour, length):
         self.xi, self.yi = pos # i for index, p for pixel
         self.colour = colour
@@ -73,18 +78,18 @@ class Arena:
 
 
 class Wall:
-    """ Obstacles for the snake to navigate around """
+    """ Obstacles for the snake to navigate around / dies if it hits them """
     def __init__(self, square_length, colour):
         self.length = square_length
         self.colour = colour
         self.squares = []
 
-        # hardcoded for now TODO
+        # TODO remove placeholder hardcoding -> put in random walls option; put in outer perimeter wall option
         mid = (int(SQUARES_PER_ARENA_SIDE/2), int(SQUARES_PER_ARENA_SIDE/2))
-        _add = lambda a, b: [sum(x) for x in zip(a, b)]
-        indexes = [ _add(mid, (-2,-3)), _add(mid, (0,7)), _add(mid, (-5,0)) , _add(mid, (4,5)) ] # TODO not hardcode like this
-        for i in indexes:
-            self.squares.append(Square((i), self.colour, self.length))
+        _add_to_mid = lambda a : [sum(x) for x in zip(a, mid)]
+        wall_coords = [ _add_to_mid((-2,-3)), _add_to_mid((0,7)), _add_to_mid((0,6)), _add_to_mid((-5,0)) , _add_to_mid((4,5)) ]
+        for wallxy in wall_coords:
+            self.squares.append(Square((wallxy), self.colour, self.length))
 
     def display(self):
         for sq in self.squares:
@@ -132,18 +137,18 @@ class Snake:
             _collide(wall)
             
     def update(self):
-        """ Takes in left/right etc, updates velocity (1, 0) vector """
+        """ Moves the snake. Takes in `left/right` etc, then updates velocity `(1, 0)` vector.  """
          # Add new head based on velocity and old head
         velocity = DIRECT_DICT[self.direction]
-        head_coords = [ (self.squares[0].index_coords()[i] + velocity[i]) for i in (0,1) ]
+        new_head_coords = [ (self.squares[0].index_coords()[i] + velocity[i]) for i in (0,1) ]
         # Wrap around screen if reach the end
         for i in (0, 1):
-            if head_coords[i] < 0:
-                head_coords[i] = SQUARES_PER_ARENA_SIDE - 1
-            elif head_coords[i] > SQUARES_PER_ARENA_SIDE - 1:
-                head_coords[i] = 0
+            if new_head_coords[i] < 0:
+                new_head_coords[i] = SQUARES_PER_ARENA_SIDE - 1
+            elif new_head_coords[i] > SQUARES_PER_ARENA_SIDE - 1:
+                new_head_coords[i] = 0
 
-        self.squares.insert(0, Square(head_coords, self.colour, self.length))
+        self.squares.insert(0, Square(new_head_coords, self.colour, self.length))
         if self.growing:
             self.growing = False
         else:
@@ -155,9 +160,17 @@ class Player(Snake):
     def __init__(self, pos, colour, size):
         Snake.__init__(self, pos, colour, size)
         self.direction_queue = queue.Queue(4)
+
+    def queue_key_press(self, key):
+        """ Adds multiple inputs into queue. Inputs decoded into `left/right` etc. """
+        if key in KEY_MAPPING:
+            try:
+                self.direction_queue.put(KEY_MAPPING[key], block=False)
+            except queue.Full:
+                pass
     
     def process_queue(self):
-        """ Takes in left/right etc, updates direction """
+        """ Takes in `left/right` etc, updates direction """
         try:
             new_direction = self.direction_queue.get(block=False)
         except queue.Empty:
@@ -165,13 +178,97 @@ class Player(Snake):
         if new_direction not in (self.direction, OPPOSITES[self.direction]):
             self.direction = new_direction
 
-    def queue_key_press(self, key):
-        """ Adds multiple inputs into queue. Inputs decoded into left/right etc. """
-        if key in KEY_MAPPING:
-            try:
-                self.direction_queue.put(KEY_MAPPING[key], block=False)
-            except queue.Full:
-                pass
+
+class BFSSnake(Snake):
+    """
+    Breadth First Search path finding snake
+    Addition to the original game, whose structure isn't best suited to working this way
+    so it's a bit shoe-horned in.
+
+    VERY MESSY CODE WARNING - WILL FIX, also not elegant in places, havent decided best approach yet.
+    """
+    def __init__(self, pos, colour, size):
+        Snake.__init__(self, pos, colour, size)
+        self.direction_queue = deque()
+
+    def get_neighbours(self, square, obstacles):
+        """ Returns the actual Square objects that make up neighbours; obstacles input as an array, can't be neighbours """
+        # Prepopulate array of obstacle squares
+        obstacle_squares = []
+        for ob in obstacles:
+            for sq in ob:
+                obstacle_squares.append(sq)
+        
+        neigbour_coords = []
+        node_coords = square.index_coords()
+        _add = lambda x, y : map(sum, zip(x,y))
+        neighbour_directions = [ (1,0), (0,1), (-1,0), (0,-1) ]
+
+        # Get neighbour index coordinates
+        for n in neighbour_directions:
+            n_coord = _add(node_coords, n)
+            # Check for looping across the screen
+            for i in (0, 1):
+                if n_coord[i] < 0:
+                    n_coord[i] = SQUARES_PER_ARENA_SIDE - 1
+                elif n_coord[i] > SQUARES_PER_ARENA_SIDE - 1:
+                    n_coord[i] = 0
+            # Check for obstacles
+            for sq in obstacle_squares:
+                if sq.index_coords() == n_coord:
+                    break
+                else:
+                    neighbour_coords.append(n_coord)
+        
+        neighbour_objects = [ x for x in arena.squares if x.index_coords in neighbour_coords ]
+        return neighbour_objects
+
+
+    def get_BFS_path(self, goal, arena, obstacles):
+        """ Runs the BFS algorithm from the current state to gain best path.
+        Technically won't be optimal path as we only run it once after eating apple / spawning new one,
+        so won't account for movement of snake.
+        """
+        start=self.squares[0]
+        if start.index_coords() == goal.index_coords():
+            return
+
+        explored = []
+        queue = deque() # deque is faster than queue
+        queue.append([start]) # queue contains a number of arrays. The arrays contain the node list of the path
+
+        while queue: # isn't empty
+            path = queue.popleft() # examine oldest path (FIFO)
+            current = path[-1] # get last node within that path
+            if current not in explored: # then add to explored and get neighbours
+                neighbours = get_neighbours(current, obstacles)
+                for n in neighbours:
+                    new_path = list(path)
+                    new_path.append(n)
+                    queue.append(new_path)
+                    if n.index_coords() == goal.index_coords():
+                        return new_path
+
+                explored.append(current)
+
+    def process_path_into_queue(self):
+        path = get_BFS_path(apple, arena, [wall, self.squares])
+        head_i = self.squares[0].index_coords()
+        for node in path:
+            n = node.index_coords()
+            if n[0] < head_i[0]:
+                self.direction_queue.append("left")
+            elif n[0] > head_i[0]:
+                self.direction_queue.append("right")
+            elif n[1] < head_i[1]:
+                direction_queue.append("down")
+            elif n[1] > head_i[1]:
+                direction_queue.append("up")
+            else:
+                raise Exception("something is very wrong...")
+
+    def per_turn_update(self):
+        self.direction = self.direction_queue.popleft()
 
 
 class Apple:
@@ -260,8 +357,7 @@ class GamePlayState(Scene):
         screen.blit(text, (500, 400))
 
     def process_event(self, event):
-        if event.type == pg.KEYDOWN:
-            self.snake.queue_key_press(event.key)
+        self.snake.queue_key_press(event.key)
 
     def update(self):
         self.snake.process_queue()
