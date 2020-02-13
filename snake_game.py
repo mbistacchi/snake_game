@@ -3,6 +3,8 @@ import sys
 import random
 import queue
 from collections import deque
+from functools import reduce
+import operator 
 
 # TODO: AI Snake with pathfinding algorithms (BFS, A* etc); more options like perimeter wall, difficulty
 
@@ -70,12 +72,15 @@ class Arena:
         for y in range(self.size):
             for x in range(self.size):
                 self.squares[y].append(Square((x,y), self.colour, self.length))
+        self.unpacked_squares = self.unpack(self.squares) # 1d array of the squares
 
     def display(self):
         for y in self.squares:
             for square in y:
                 square.display()
 
+    def unpack(self, tup):
+            return (reduce(operator.add, tup))
 
 class Wall:
     """ Obstacles for the snake to navigate around / dies if it hits them """
@@ -120,6 +125,7 @@ class Snake:
             self.growing = True
             self.points += apple.points_value
             apple.respawn([self])
+            return True
         
     def collision_check(self, walls = None):
         xh, yh = self.squares[0].index_coords()
@@ -187,26 +193,31 @@ class BFSSnake(Snake):
 
     VERY MESSY CODE WARNING - WILL FIX, also not elegant in places, havent decided best approach yet.
     """
-    def __init__(self, pos, colour, size):
+    def __init__(self, pos, colour, size, arena, apple, wall = None):
         Snake.__init__(self, pos, colour, size)
         self.direction_queue = deque()
+        # defining these as belonging to the BFSSnake is a bit of a hack
+        # need to pass in a concrete object, but ends up a bit circular referencing
+        self.arena = arena
+        self.wall = wall
+        self.apple = apple
 
     def get_neighbours(self, square, obstacles):
         """ Returns the actual Square objects that make up neighbours; obstacles input as an array, can't be neighbours """
         # Prepopulate array of obstacle squares
         obstacle_squares = []
         for ob in obstacles:
-            for sq in ob:
+            for sq in ob.squares:
                 obstacle_squares.append(sq)
         
-        neigbour_coords = []
+        neighbour_coords = []
         node_coords = square.index_coords()
-        _add = lambda x, y : map(sum, zip(x,y))
+        vector_add = lambda x, y : [sum(i) for i in zip(x,y)]
         neighbour_directions = [ (1,0), (0,1), (-1,0), (0,-1) ]
 
         # Get neighbour index coordinates
         for n in neighbour_directions:
-            n_coord = _add(node_coords, n)
+            n_coord = vector_add(node_coords, n)
             # Check for looping across the screen
             for i in (0, 1):
                 if n_coord[i] < 0:
@@ -220,7 +231,7 @@ class BFSSnake(Snake):
                 else:
                     neighbour_coords.append(n_coord)
         
-        neighbour_objects = [ x for x in arena.squares if x.index_coords in neighbour_coords ]
+        neighbour_objects = [ x for x in self.arena.unpacked_squares if x.index_coords in neighbour_coords ]
         return neighbour_objects
 
 
@@ -229,8 +240,8 @@ class BFSSnake(Snake):
         Technically won't be optimal path as we only run it once after eating apple / spawning new one,
         so won't account for movement of snake.
         """
-        start=self.squares[0]
-        if start.index_coords() == goal.index_coords():
+        start = self.squares[0]
+        if start.index_coords() == goal.square.index_coords():
             return
 
         explored = []
@@ -241,7 +252,7 @@ class BFSSnake(Snake):
             path = queue.popleft() # examine oldest path (FIFO)
             current = path[-1] # get last node within that path
             if current not in explored: # then add to explored and get neighbours
-                neighbours = get_neighbours(current, obstacles)
+                neighbours = self.get_neighbours(current, obstacles)
                 for n in neighbours:
                     new_path = list(path)
                     new_path.append(n)
@@ -252,7 +263,7 @@ class BFSSnake(Snake):
                 explored.append(current)
 
     def process_path_into_queue(self):
-        path = get_BFS_path(apple, arena, [wall, self.squares])
+        path = self.get_BFS_path(self.apple, self.arena, [self.wall, self.squares])
         head_i = self.squares[0].index_coords()
         for node in path:
             n = node.index_coords()
@@ -261,19 +272,19 @@ class BFSSnake(Snake):
             elif n[0] > head_i[0]:
                 self.direction_queue.append("right")
             elif n[1] < head_i[1]:
-                direction_queue.append("down")
+                self.direction_queue.append("down")
             elif n[1] > head_i[1]:
-                direction_queue.append("up")
+                self.direction_queue.append("up")
             else:
                 raise Exception("something is very wrong...")
 
-    def per_turn_update(self):
+    def process_queue(self):
         self.direction = self.direction_queue.popleft()
 
 
 class Apple:
     """ Food our (veggie) snake is greedily after """
-    def __init__(self, colour, length, points_value, snake):
+    def __init__(self, colour, length, points_value):
         self.colour = colour
         self.length = length
         self.xi, self.yi = self._rand_coords()
@@ -342,10 +353,13 @@ class GamePlayState(Scene):
     def reset(self):
         Scene.reset(self)
         self.arena = Arena(SQUARES_PER_ARENA_SIDE, SQUARE_SIZE, COLOUR_MAP["surface"])
-        self.snake = Player(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE)
-        self.apple = Apple(COLOUR_MAP["apple"], SQUARE_SIZE, 1, self.snake)
+        self.apple = Apple(COLOUR_MAP["apple"], SQUARE_SIZE, 1)
         self.wall = Wall(SQUARE_SIZE, COLOUR_MAP["wall"])
+        self.snake = BFSSnake(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE, self.arena, self.apple, self.wall)
+        if isinstance(self.snake, BFSSnake):
+            self.snake.get_BFS_path(self.apple, self.arena, [self.wall, self.snake])
         self.font = pg.font.SysFont("courier new", 50)
+
 
     def render(self):
         screen.fill(COLOUR_MAP["background"])
@@ -357,12 +371,19 @@ class GamePlayState(Scene):
         screen.blit(text, (500, 400))
 
     def process_event(self, event):
-        self.snake.queue_key_press(event.key)
+        if isinstance(self.snake, Player):
+            self.snake.queue_key_press(event.key)
+        else:
+            pass
 
     def update(self):
         self.snake.process_queue()
         self.snake.update()
-        self.snake.food_check(self.apple)
+        self.snake.food_check(self.apple) # this includes respawning the apple if needed
+        if isinstance(self.snake, BFSSnake):
+            if self.snake.growing == True:
+                self.snake.get_BFS_path(self.apple, self.arena, [self.snake, self.wall])
+
         self.snake.collision_check(self.wall)
         if self.snake.alive == False:
             self.done = True
