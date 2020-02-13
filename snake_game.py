@@ -103,8 +103,11 @@ class Wall:
 
 
 class Snake:
-    """ Class for the agent(s) """
-    def __init__(self, pos, colour, square_length):
+    """ Class for the agent(s)
+    Logic depending on external Objects (like apple) are controlled
+    within the Snake - effectively the "master" object.
+    """
+    def __init__(self, pos, colour, square_length, wall):
         self.xi, self.yi = pos
         self.colour = colour
         self.size = 3
@@ -113,6 +116,7 @@ class Snake:
         self.points = 0
         self.growing = False
         self.alive = True
+        self.wall = wall
         self.squares = []
         for x in range(self.size): # horizontal initial orientation
             self.squares.append(Square((self.xi - x, self.yi), self.colour, self.length))
@@ -125,7 +129,7 @@ class Snake:
         if self.squares[0].index_coords() == apple.square.index_coords():
             self.growing = True
             self.points += apple.points_value
-            apple.respawn([self])
+            apple.respawn([self, self.wall])
             return True
         
     def collision_check(self, walls = None):
@@ -195,10 +199,8 @@ class BFSSnake(Snake):
     VERY MESSY CODE WARNING - WILL FIX, also not elegant in places, havent decided best approach yet.
     """
     def __init__(self, pos, colour, size, arena, apple, wall):
-        Snake.__init__(self, pos, colour, size)
+        Snake.__init__(self, pos, colour, size, wall)
         self.direction_queue = deque()
-        # defining these as belonging to the BFSSnake is a bit of a hack
-        # need to pass in a concrete object, but ends up a bit circular referencing
         self.arena = arena
         self.wall = wall
         self.apple = apple
@@ -265,7 +267,7 @@ class BFSSnake(Snake):
         Fills in the direction_queue when called fully to lead snake to goal.
         """
         path = self.get_BFS_path(self.apple, self.arena, [self.wall, self])
-        path = path[1::]
+        path = path[1::] # drop head
         head_i = self.squares[0].index_coords()
         previous_coords = head_i
         for node in path:
@@ -283,7 +285,7 @@ class BFSSnake(Snake):
             previous_coords = n
 
     def process_queue(self):
-        self.get_queue()
+        #self.get_queue()
         self.direction = self.direction_queue.popleft()
 
 
@@ -386,8 +388,7 @@ class GamePlayState(Scene):
         self.snake.food_check(self.apple) # this includes respawning the apple if needed
         if isinstance(self.snake, BFSSnake):
             if self.snake.growing == True:
-                pass
-                #self.snake.get_queue()
+                self.snake.get_queue()
 
         self.snake.collision_check(self.wall)
         if self.snake.alive == False:
