@@ -40,7 +40,7 @@ COLOUR_MAP = {"snake": GREEN, "apple": RED, "wall": BLACK, "surface": GREY, "bac
 class Square:
     """ All other objects in the game will be built up from this
     All `display()` functions revert to this. The only back-end logic held is `index coords`,
-    for x, y in {0, 1, 2 ... SQUARES_PER_ARENA_SIDE - 1} instead of raw pixel location values.
+    for (x, y) in {0, 1, 2 ... SQUARES_PER_ARENA_SIDE - 1} instead of raw pixel location values.
     N.B. As pg.rect takes in (x, y) not (y, x), we generally use this convention, although not when in breaks Python.
     """
     def __init__(self, pos, colour, length):
@@ -81,6 +81,7 @@ class Arena:
 
     def unpack(self, tup):
             return (reduce(operator.add, tup))
+
 
 class Wall:
     """ Obstacles for the snake to navigate around / dies if it hits them """
@@ -205,10 +206,10 @@ class BFSSnake(Snake):
     def get_neighbours(self, square, obstacles):
         """ Returns the actual Square objects that make up neighbours; obstacles input as an array, can't be neighbours """
         # Prepopulate array of obstacle squares
-        obstacle_squares = []
+        obstacle_coords = []
         for ob in obstacles:
             for sq in ob.squares:
-                obstacle_squares.append(sq)
+                obstacle_coords.append(sq.index_coords())
         
         neighbour_coords = []
         node_coords = square.index_coords()
@@ -216,8 +217,8 @@ class BFSSnake(Snake):
         neighbour_directions = [ (1,0), (0,1), (-1,0), (0,-1) ]
 
         # Get neighbour index coordinates
-        for n in neighbour_directions:
-            neighbour_coord = vector_add(node_coords, n)
+        for direction in neighbour_directions:
+            neighbour_coord = vector_add(node_coords, direction)
             # Check for looping across the screen
             for i in (0, 1):
                 if neighbour_coord[i] < 0:
@@ -225,16 +226,11 @@ class BFSSnake(Snake):
                 elif neighbour_coord[i] > SQUARES_PER_ARENA_SIDE - 1:
                     neighbour_coord[i] = 0
             # Check for obstacles
-            for sq in obstacle_squares:
-                if sq.index_coords() == neighbour_coord:
-                    continue
-                else:
-                    neighbour_coords.append(tuple(neighbour_coord))
-                    break
-        
+            if neighbour_coord not in obstacle_coords:
+                neighbour_coords.append(tuple(neighbour_coord))
+        # Return the actual objects refering to neighbour Squares
         neighbour_objects = [ x for x in self.arena.unpacked_squares if x.index_coords() in neighbour_coords ]
         return neighbour_objects
-
 
     def get_BFS_path(self, goal, arena, obstacles):
         """ Runs the BFS algorithm from the current state to gain best path.
@@ -271,22 +267,23 @@ class BFSSnake(Snake):
         path = self.get_BFS_path(self.apple, self.arena, [self.wall, self])
         path = path[1::]
         head_i = self.squares[0].index_coords()
+        previous_coords = head_i
         for node in path:
             n = node.index_coords()
-            if n[0] < head_i[0]:
+            if n[0] < previous_coords[0]:
                 self.direction_queue.append("left")
-            elif n[0] > head_i[0]:
+            elif n[0] > previous_coords[0]:
                 self.direction_queue.append("right")
-            elif n[1] < head_i[1]:
+            elif n[1] > previous_coords[1]:
                 self.direction_queue.append("down")
-            elif n[1] > head_i[1]:
+            elif n[1] < previous_coords[1]:
                 self.direction_queue.append("up")
-            elif n == head_i:
-                raise Exception("head == neighbour somehow...")
             else:
                 raise Exception("something is very wrong...")
+            previous_coords = n
 
     def process_queue(self):
+        self.get_queue()
         self.direction = self.direction_queue.popleft()
 
 
@@ -368,7 +365,6 @@ class GamePlayState(Scene):
             self.snake.get_queue()
         self.font = pg.font.SysFont("courier new", 50)
 
-
     def render(self):
         screen.fill(COLOUR_MAP["background"])
         self.arena.display()
@@ -385,18 +381,19 @@ class GamePlayState(Scene):
             pass
 
     def update(self):
-        self.snake.process_queue()
-        self.snake.update()
+        self.snake.process_queue() # belongs to child class
+        self.snake.update()        # belongs to parent class
         self.snake.food_check(self.apple) # this includes respawning the apple if needed
         if isinstance(self.snake, BFSSnake):
             if self.snake.growing == True:
-                self.snake.get_queue()
+                pass
+                #self.snake.get_queue()
 
         self.snake.collision_check(self.wall)
         if self.snake.alive == False:
             self.done = True
 
-    
+
 """ ################## CONTROL CLASS  #########################"""
 
 class Control:
