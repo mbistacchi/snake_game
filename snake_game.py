@@ -168,8 +168,8 @@ class Snake:
 
 class Player(Snake):
     """ Human controlled snake via arrow keys """
-    def __init__(self, pos, colour, size):
-        Snake.__init__(self, pos, colour, size)
+    def __init__(self, pos, colour, size, wall):
+        Snake.__init__(self, pos, colour, size, wall)
         self.direction_queue = queue.Queue(4)
 
     def queue_key_press(self, key):
@@ -228,7 +228,7 @@ class BFSSnake(Snake):
                 elif neighbour_coord[i] > SQUARES_PER_ARENA_SIDE - 1:
                     neighbour_coord[i] = 0
             # Check for obstacles
-            if neighbour_coord not in obstacle_coords:
+            if tuple(neighbour_coord) not in obstacle_coords:
                 neighbour_coords.append(tuple(neighbour_coord))
         # Return the actual objects refering to neighbour Squares
         neighbour_objects = [ x for x in self.arena.unpacked_squares if x.index_coords() in neighbour_coords ]
@@ -237,13 +237,10 @@ class BFSSnake(Snake):
     def get_BFS_path(self, goal, arena, obstacles):
         """ Runs the BFS algorithm from the current state to gain best path.
         Returns a list of the square Objects the snake should go along.
-        Technically won't be optimal path as we only run it once after eating apple / spawning new one,
-        so won't account for movement of snake.
         """
         start = self.squares[0]
         if start.index_coords() == goal.square.index_coords():
             return
-
         explored = []
         queue = deque() # deque is faster than queue
         queue.append([start]) # queue contains a number of arrays. The arrays contain the node list of the path
@@ -264,12 +261,11 @@ class BFSSnake(Snake):
 
     def get_queue(self):
         """ Translate the path (list of square Objects) to directions to follow.
-        Fills in the direction_queue when called fully to lead snake to goal.
+        Fills in the direction_queue when called to lead snake to goal.
         """
         path = self.get_BFS_path(self.apple, self.arena, [self.wall, self])
+        previous_coords = path[0].index_coords() # init to Snake head
         path = path[1::] # drop head
-        head_i = self.squares[0].index_coords()
-        previous_coords = head_i
         for node in path:
             n = node.index_coords()
             if n[0] < previous_coords[0]:
@@ -285,7 +281,6 @@ class BFSSnake(Snake):
             previous_coords = n
 
     def process_queue(self):
-        #self.get_queue()
         self.direction = self.direction_queue.popleft()
 
 
@@ -362,8 +357,10 @@ class GamePlayState(Scene):
         self.arena = Arena(SQUARES_PER_ARENA_SIDE, SQUARE_SIZE, COLOUR_MAP["surface"])
         self.apple = Apple(COLOUR_MAP["apple"], SQUARE_SIZE, 1)
         self.wall = Wall(SQUARE_SIZE, COLOUR_MAP["wall"])
-        self.snake = BFSSnake(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE, self.arena, self.apple, self.wall)
-        if isinstance(self.snake, BFSSnake):
+        if Snake_type == 1:
+            self.snake = Player(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE, self.wall)
+        elif Snake_type == 2:
+            self.snake = BFSSnake(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE, self.arena, self.apple, self.wall)
             self.snake.get_queue()
         self.font = pg.font.SysFont("courier new", 50)
 
@@ -386,10 +383,9 @@ class GamePlayState(Scene):
         self.snake.process_queue() # belongs to child class
         self.snake.update()        # belongs to parent class
         self.snake.food_check(self.apple) # this includes respawning the apple if needed
-        if isinstance(self.snake, BFSSnake):
+        if Snake_type == 2: # BFS snake
             if self.snake.growing == True:
                 self.snake.get_queue()
-
         self.snake.collision_check(self.wall)
         if self.snake.alive == False:
             self.done = True
@@ -436,6 +432,7 @@ w, h = 620, 620 # pixel coords
 FPS = 10
 
 """ Main """
+Snake_type = int(input("Press 1 for Player controlled Snake, 2 for automated Snake: "))
 pg.init()
 clock = pg.time.Clock()
 screen = pg.display.set_mode([w, h]) #  Square.display() and a few others need a direct reference to "screen" TODO impliment better
