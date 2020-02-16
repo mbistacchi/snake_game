@@ -1,2 +1,4 @@
 # snake_game
-OOP implimentation of the classic game. After fleshing out with some scene/game management polish, the plan is to add AI snakes using e.g. A* search algorithm.
+OOP implimentation of the classic game, including scene management. Includes an "AI" snake option using Breadth First Search for basic pathfinding.
+
+TODO: Fix bug in BFS Snake sometimes going back on itself after first apple; User input to define Player/AI snake, better obstacles/wall management (currently hardcoded to some positions I randomly chose).
