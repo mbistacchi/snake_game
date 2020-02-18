@@ -54,8 +54,8 @@ class Square:
 
     def sq_to_pixs(self, x, y):
         """ Converts index of square to pixel coords """
-        px = (x+1)*(2*MARGIN + SQUARE_SIZE) - MARGIN - SQUARE_SIZE
-        py = (y+1)*(2*MARGIN + SQUARE_SIZE) - MARGIN
+        px = (MARGIN + SQUARE_SIZE) * x + MARGIN
+        py = (MARGIN + SQUARE_SIZE) * y + MARGIN
         return (px, py)
 
     def index_coords(self):
@@ -428,7 +428,7 @@ SQUARE_SIZE = 20 # pixels
 SQUARES_PER_ARENA_SIDE = 20 # squares
 MARGIN = 2 # pixels
 SNAKE_START = (int(SQUARES_PER_ARENA_SIDE/2), int(SQUARES_PER_ARENA_SIDE/2)) # square coords
-w, h = 620, 620 # pixel coords
+w, h = 600, 450 # pixel coords
 FPS = 10
 
 """ Main """
