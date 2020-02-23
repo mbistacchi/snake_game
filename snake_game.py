@@ -50,6 +50,7 @@ class Square:
         self.g = 0 # These added for A* pathfinding
         self.h = 0
         self.f = 0
+        self.parent = None
 
     def display(self):
         xp, yp = self.sq_to_pixs(self.xi, self.yi) # (x = left side, y = top edge)
@@ -269,7 +270,7 @@ class PathfindingSnake(Snake):
         return neighbour_objects
 
     def get_path(self, goal, arena, obstacles):
-        pass # define in child
+        raise Exception("get_path() not defined - define in child Snake") 
 
     def get_queue(self):
         """ Translate the path (list of square Objects) to directions to follow.
@@ -336,46 +337,45 @@ class AstarSnake(PathfindingSnake):
 
     def get_path(self, goal, arena, obstacles):
         explored = []
-        open_list = [] # LIFO for our purposes
+        open_list = [] 
         start = self.squares[0]
         end = goal.square
-        start.g = start.h = start.f = end.g = end.h = end.f = 0
+        #start.g = start.h = start.f = end.g = end.h = end.f = 0
         open_list.append(start)
 
-        if start.index_coords() == end.index_coords(): # trivially found goal
+        # trivially found goal
+        if start.index_coords() == end.index_coords(): 
             return
         
-        while open_list:
-            current = open_list[0]
-            index = 0
-            for i, sq in enumerate(open_list):
-                if sq.f < current.f: # get lowest f score
-                    current = sq
-                    index = i
-            open_list.pop(index)
+        while len(open_list) > 0:
+            current = min(open_list, key = lambda x: x.f) # get min f score
+            open_list = [i for i in open_list if not i == current] # remove current - convoluted
             explored.append(current)
 
-            if current.index_coords() == end.index_coords(): # construct path
+            # found goal - construct path
+            if current.index_coords() == end.index_coords(): 
                 path = []
-                node = current
-                while node is not None:
-                    path.append(node)
-#####
-                return path
+                while current is not None:
+                    path.append(current)
+                    current = current.parent
+                return path[::-1]
 
+            # loop neighbours, calc scores
             neighbours = self.get_neighbours(current, obstacles)
-            for neighbour in neighbours: # loop across current's neighbours
+            for neighbour in neighbours:
                 if neighbour in explored:
                     continue
-
+                neighbour.parent = current
                 neighbour.g = current.g + self.manhattan_distance(current, neighbour) 
-                neighbour.h = self.manhattan_distance(neighbour, goal)
-                neighbour.f = neighbour.h + neighbour.h
+                neighbour.h = self.manhattan_distance(neighbour, end)
+                neighbour.f = neighbour.g + neighbour.h
 
-                for node in open_list: # neighbour already in open list
-                    if neighbour == node and neighbour.g > node.g:
+                # neighbour already in open list with no improvement in score 
+                for open in open_list:
+                    if neighbour == open and neighbour.g > open.g:
                         continue
                 
+                # passes all tests, update with new scores
                 open_list.append(neighbour)
 
 
@@ -431,6 +431,9 @@ class GamePlayState(Scene):
         elif Snake_type == 2:
             self.snake = BFSSnake(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE, self.arena, self.apple, self.wall)
             self.snake.get_queue()
+        elif Snake_type == 3:
+            self.snake = AstarSnake(SNAKE_START, COLOUR_MAP["snake"], SQUARE_SIZE, self.arena, self.apple, self.wall)
+            self.snake.get_queue()
         self.font = pg.font.SysFont("courier new", 50)
 
     def render(self):
@@ -452,7 +455,7 @@ class GamePlayState(Scene):
         self.snake.process_queue() # belongs to child class
         self.snake.update()        # belongs to parent class
         self.snake.food_check(self.apple) # this includes respawning the apple if needed
-        if Snake_type == 2: # BFS snake
+        if Snake_type > 1: # BFS snake
             if self.snake.growing == True:
                 self.snake.get_queue()
         self.snake.collision_check(self.wall)
@@ -501,7 +504,7 @@ w, h = 600, 450 # pixel coords
 FPS = 10
 
 """ Main """
-Snake_type = int(input("Press 1 for Player controlled Snake, 2 for automated Snake: "))
+Snake_type = int(input("Press 1 for Player controlled Snake, 2 for BFS automated Snake, 3 for A* automated Snake: "))
 pg.init()
 clock = pg.time.Clock()
 screen = pg.display.set_mode([w, h]) #  Square.display() and a few others need a direct reference to "screen" TODO impliment better
