@@ -6,7 +6,7 @@ from collections import deque
 from functools import reduce
 import operator 
 
-# TODO: AI Snake with pathfinding algorithms (BFS, A* etc); more options like perimeter wall, difficulty
+# TODO: A* algorithm; more options like perimeter wall, difficulty
 
 """ #######################################
          HARD CODED MAPPINGS
@@ -35,7 +35,7 @@ COLOUR_MAP = {"snake": GREEN, "apple": RED, "wall": BLACK, "surface": GREY, "bac
         CLASSES
     ################ """
 
-""" ####################### Object Classes ########################## """
+""" ####################### GAME OBJECTS ########################## """
 
 class Square:
     """ All other objects in the game will be built up from this
@@ -47,6 +47,9 @@ class Square:
         self.xi, self.yi = pos # i for index, p for pixel
         self.colour = colour
         self.length = length
+        self.g = 0 # These added for A* pathfinding
+        self.h = 0
+        self.f = 0
 
     def display(self):
         xp, yp = self.sq_to_pixs(self.xi, self.yi) # (x = left side, y = top edge)
@@ -102,6 +105,34 @@ class Wall:
             sq.display()
 
 
+class Apple:
+    """ Food our (veggie) snake is greedily after """
+    def __init__(self, colour, length, points_value):
+        self.colour = colour
+        self.length = length
+        self.xi, self.yi = self._rand_coords()
+        self.points_value = points_value
+        self.square = Square((self.xi, self.yi), self.colour, self.length)
+
+    def _rand_coords(self):
+        rand_num = lambda x: random.randint(0, x)
+        _x = rand_num(SQUARES_PER_ARENA_SIDE-1)
+        _y = rand_num(SQUARES_PER_ARENA_SIDE-1)
+        return _x, _y
+
+    def respawn(self, obstacles):
+        _x, _y = self._rand_coords()
+        for ob in obstacles:
+            for sq in ob.squares:
+                while sq.index_coords() == (_x, _y):
+                    _x, _y = self._rand_coords()
+        self.square.xi, self.square.yi = _x, _y
+       
+    def display(self):
+        self.square.display()
+
+
+""" ############################ SNAKES ############################# """
 class Snake:
     """ Class for the agent(s)
     Logic depending on external Objects (like apple) are controlled
@@ -190,13 +221,14 @@ class Player(Snake):
             self.direction = new_direction
 
 
-class BFSSnake(Snake):
+class PathfindingSnake(Snake):
     """
-    Breadth First Search path finding snake
+    Object for pathfinding snakes to inheret from. This gives the shared functions and
+    structure to process the pathfinding algorithms, which just return a list of nodes to follow.
     Addition to the original game, whose structure isn't best suited to working this way
     so it's a bit shoe-horned in.
 
-    VERY MESSY CODE WARNING - WILL FIX, also not elegant in places, havent decided best approach yet.
+     MESSY CODE WARNING - not elegant in places.
     """
     def __init__(self, pos, colour, size, arena, apple, wall):
         Snake.__init__(self, pos, colour, size, wall)
@@ -206,7 +238,9 @@ class BFSSnake(Snake):
         self.apple = apple
 
     def get_neighbours(self, square, obstacles):
-        """ Returns the actual Square objects that make up neighbours; obstacles input as an array, can't be neighbours """
+        """ Returns the actual Square objects that make up neighbours; obstacles input as an array, can't be neighbours.
+        This would be a million times easier if I'd just used something like a np array and indexed across it...
+         """
         # Prepopulate array of obstacle squares
         obstacle_coords = []
         for ob in obstacles:
@@ -234,7 +268,39 @@ class BFSSnake(Snake):
         neighbour_objects = [ x for x in self.arena.unpacked_squares if x.index_coords() in neighbour_coords ]
         return neighbour_objects
 
-    def get_BFS_path(self, goal, arena, obstacles):
+    def get_path(self, goal, arena, obstacles):
+        pass # define in child
+
+    def get_queue(self):
+        """ Translate the path (list of square Objects) to directions to follow.
+        Fills in the direction_queue when called to lead snake to goal.
+        """
+        path = self.get_path(self.apple, self.arena, [self.wall, self])
+        previous_coords = path[0].index_coords() # init to Snake head
+        path = path[1::] # drop head
+        for node in path:
+            n = node.index_coords()
+            if n[0] < previous_coords[0]:
+                self.direction_queue.append("left")
+            elif n[0] > previous_coords[0]:
+                self.direction_queue.append("right")
+            elif n[1] > previous_coords[1]:
+                self.direction_queue.append("down")
+            elif n[1] < previous_coords[1]:
+                self.direction_queue.append("up")
+            else:
+                raise Exception("something is very wrong...")
+            previous_coords = n
+
+    def process_queue(self):
+        self.direction = self.direction_queue.popleft()
+
+
+class BFSSnake(PathfindingSnake):
+    def __init__(self, pos, colour, size, arena, apple, wall):
+        PathfindingSnake.__init__(self, pos, colour, size, arena, apple, wall)
+
+    def get_path(self, goal, arena, obstacles):
         """ Runs the BFS algorithm from the current state to gain best path.
         Returns a list of the square Objects the snake should go along.
         """
@@ -259,56 +325,59 @@ class BFSSnake(Snake):
 
                 explored.append(current)
 
-    def get_queue(self):
-        """ Translate the path (list of square Objects) to directions to follow.
-        Fills in the direction_queue when called to lead snake to goal.
-        """
-        path = self.get_BFS_path(self.apple, self.arena, [self.wall, self])
-        previous_coords = path[0].index_coords() # init to Snake head
-        path = path[1::] # drop head
-        for node in path:
-            n = node.index_coords()
-            if n[0] < previous_coords[0]:
-                self.direction_queue.append("left")
-            elif n[0] > previous_coords[0]:
-                self.direction_queue.append("right")
-            elif n[1] > previous_coords[1]:
-                self.direction_queue.append("down")
-            elif n[1] < previous_coords[1]:
-                self.direction_queue.append("up")
-            else:
-                raise Exception("something is very wrong...")
-            previous_coords = n
 
-    def process_queue(self):
-        self.direction = self.direction_queue.popleft()
+class AstarSnake(PathfindingSnake):
+    def __init__(self, pos, colour, size, arena, apple, wall):
+        PathfindingSnake.__init__(self, pos, colour, size, arena, apple, wall)
 
+    def manhattan_distance(self, start, goal):
+        _man_dist = lambda x, y: sum( [abs(i[1] - i[0]) for i in zip(x,y)] )
+        return _man_dist(start.index_coords(), goal.index_coords())
 
-class Apple:
-    """ Food our (veggie) snake is greedily after """
-    def __init__(self, colour, length, points_value):
-        self.colour = colour
-        self.length = length
-        self.xi, self.yi = self._rand_coords()
-        self.points_value = points_value
-        self.square = Square((self.xi, self.yi), self.colour, self.length)
+    def get_path(self, goal, arena, obstacles):
+        explored = []
+        open_list = [] # LIFO for our purposes
+        start = self.squares[0]
+        end = goal.square
+        start.g = start.h = start.f = end.g = end.h = end.f = 0
+        open_list.append(start)
 
-    def _rand_coords(self):
-        rand_num = lambda x: random.randint(0, x)
-        _x = rand_num(SQUARES_PER_ARENA_SIDE-1)
-        _y = rand_num(SQUARES_PER_ARENA_SIDE-1)
-        return _x, _y
+        if start.index_coords() == end.index_coords(): # trivially found goal
+            return
+        
+        while open_list:
+            current = open_list[0]
+            index = 0
+            for i, sq in enumerate(open_list):
+                if sq.f < current.f: # get lowest f score
+                    current = sq
+                    index = i
+            open_list.pop(index)
+            explored.append(current)
 
-    def respawn(self, obstacles):
-        _x, _y = self._rand_coords()
-        for ob in obstacles:
-            for sq in ob.squares:
-                while sq.index_coords() == (_x, _y):
-                    _x, _y = self._rand_coords()
-        self.square.xi, self.square.yi = _x, _y
-       
-    def display(self):
-        self.square.display()
+            if current.index_coords() == end.index_coords(): # construct path
+                path = []
+                node = current
+                while node is not None:
+                    path.append(node)
+#####
+                return path
+
+            neighbours = self.get_neighbours(current, obstacles)
+            for neighbour in neighbours: # loop across current's neighbours
+                if neighbour in explored:
+                    continue
+
+                neighbour.g = current.g + self.manhattan_distance(current, neighbour) 
+                neighbour.h = self.manhattan_distance(neighbour, goal)
+                neighbour.f = neighbour.h + neighbour.h
+
+                for node in open_list: # neighbour already in open list
+                    if neighbour == node and neighbour.g > node.g:
+                        continue
+                
+                open_list.append(neighbour)
+
 
 
 """ ################ SCENES ####################### """    
